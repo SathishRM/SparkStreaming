@@ -9,6 +9,7 @@ When there is no data for a certain amount of time (*MAX_STOP_RETRY\*EVENT_INTER
 
 #### Sample result: ####
 { "country":"Japan", "count":3, "time_period":{"start":"2020-07-13T03:45:00.000+08:00","end":"2020-07-13T03:50:00.000+08:00"}}
+
 { "country":"Paris", "count":1, "time_period":{"start":"2020-07-13T03:45:00.000+08:00","end":"2020-07-13T03:50:00.000+08:00"}}
 
 
