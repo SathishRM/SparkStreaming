@@ -8,11 +8,11 @@ class AppConfigReader():
     def __init__(self):
         self.config = ConfigParser()
         # Get the config file path from environmental variable PY_APP_CONFIG
-        cfgDir = os.environ.get('CFG_DIR')
+        cfgDir = os.environ.get('SPARK_STREAMING_CFG_DIR')
         if cfgDir:
             cfgFile = cfgDir + "\\twitterstreaming.properties"
         else:
-            cfgFile = "E:\\Spark\\github\\TwitterStreaming\\conf\\twitterstreaming.properties"
-
+            cfgFile = "E:\\Spark\\github\\SparkStreaming\\conf\\twitterstreaming.properties"
+        print(cfgFile)
         # Load the CFG file
         self.config.read(cfgFile)

@@ -1,11 +1,15 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_utc_timestamp, to_timestamp, lit, concat, desc
-from pyspark.sql.types import StructField, StructType, StringType
+'''
+Fetch the messages from the Kafka topic for a specific country which is passed as a argument
+Arg (-c) - Name of a country (Optional)
+If no country name is passed, script will look into the application properties file for the default country
+'''
+
 import argparse
 from time import sleep
+from kafka import KafkaConsumer
+from json import loads
 from util.appconfigreader import AppConfigReader
 from util.applogger import getAppLogger
-from streamingdata import StreamingData
 
 
 if __name__ == '__main__':
@@ -16,80 +20,35 @@ if __name__ == '__main__':
         appConfigReader = AppConfigReader()
         if 'APP' in appConfigReader.config:
             appCfg = appConfigReader.config['APP']
-            jsonDir = appCfg['JSON_DIR']
-            checkpointDir = appCfg['CHECKPOINT_DIR']
-            maxFileTrigger = int(appCfg['MAX_FILE_TRIGGER'])
-            processingDuration = int(appCfg['PROCESSING_DURATION'])
-            maxStopCount = int(appCfg['MAX_STOP_RETRY'])
+            kafkaHost = appCfg['KAFKA_SERVER_NAME']
+            kafkaPort = appCfg['KAFKA_PORT']
+            consumerTimeout = int(appCfg['CONSUMER_TIMEOUT'])
+            produceTopic = appCfg['TARGET_TOPIC']
+            defaultCountry = appCfg['DEFAULT_COUNTRY']
         else:
             logger.error("Application details are missed out to configure")
             raise SystemExit(1)
-        print(f"{jsonDir} {checkpointDir} {checkpointDir} {processingDuration}")
-        # Parse the argument passed
-        argParser = argparse.ArgumentParser()
-        argParser.add_argument(
-            "process", help="Should be one of these processes Start")
+
+        # Get the country to look for the aggregation
+        argParser = argparse.ArgumentParser("Get tweets count for a country")
+        argParser.add_argument("-c","--country", help="Name of the country to check", default=defaultCountry)
         args = argParser.parse_args()
-        if args.process.lower() == 'start':
-            spark = SparkSession.builder.appName("TwitterStreaming").getOrCreate()
-            if spark:
-                logger.info("Spark session has created")
-                streamingSchema = StructType([StructField("userName", StringType(), False),
-                                              StructField("userLocation", StringType(), True),
-                                              StructField("msg", StringType(), True)])
-                streamingDF = StreamingData(
-                    spark, streamingSchema, jsonDir, checkpointDir, processingDuration, maxStopCount)
 
-                stopCount = 1
+        logger.info(f"Read the streaming data of the country {args.country} from the topic {produceTopic}")
+        consumer = KafkaConsumer(bootstrap_servers=kafkaHost+':'+kafkaPort, auto_offset_reset='latest',
+         consumer_timeout_ms=consumerTimeout, value_deserializer=lambda x: loads(x.decode('utf-8')))
+        consumer.subscribe(topics=produceTopic)
 
-                while streamingDF.streamingStatus():
-                    # Get 10 locations with most tweetStreaming
-                    logger.info("List of 10 countries with the most number of tweets")
-                    topCountries = streamingDF.top10Countries()
-                    if topCountries:
-                        for country in topCountries:
-                            logger.info(f"{country}")
-                    else:
-                        logger.info("No new feeds to update")
+        #Read data from the subscribed topics for the specific country
+        logger.info("Reading the messages...")
+        for message in consumer:
 
-                    # Count the number of tweets from a countryCount
-                    country = "INDIA"
-                    logger.info(f"Count the number of tweets from {country}")
-                    countTweet = streamingDF.countryCount(country)
-                    if countTweet:
-                        logger.info(f"{countTweet}")
-                    else:
-                        logger.info("No new feeds to update")
-
-                    # Get the country with the maximum number of tweets
-                    logger.info("Get the country which tweets the most")
-                    maxTweetCountry = streamingDF.topCountry()
-                    if maxTweetCountry:
-                        logger.info(f"{maxTweetCountry}")
-                    else:
-                        logger.info("No new feeds to update")
-
-                    # Get the user with the maximum number of tweets
-                    logger.info("Get the user who tweeted the most")
-                    user = streamingDF.topTweetsByUser()
-                    if user:
-                        logger.info(f"{user}")
-                    else:
-                        logger.info("No new feeds to update")
-
-                    # Check if need to stop the streaming
-                    stopFlag = streamingDF.stopStreaming()
-                    if stopFlag:
-                        break
-
-                    sleep(processingDuration)
+            if message.key.decode() == 'country_count' and message.value['country'].lower() == args.country.lower():
+                logger.info(f"Partition: {message.partition}, Offset: {message.offset}, Value: {message.value}")
         else:
-            logger.error(
-                f"Incorrect parameter {args.process}, please checkt the script help for the list of allowed arguments")
-            raise SystemExit(2)
+            logger.info("Completed reading messages from the topic")
+
     except Exception as error:
         logger.exception(f"Something went wrong here {error}")
     else:
         logger.info("Streaming has completed processing the feeds")
-    finally:
-        spark.stop()
